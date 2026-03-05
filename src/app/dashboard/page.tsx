@@ -1,29 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input, Textarea, Select } from '@/components/ui/input';
-import { formatCurrency, formatDate, cn } from '@/lib/utils';
-import type { CategoryWithTotal, Transaction, DashboardStats, Category } from '@/lib/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
+import type { Category, CategoryWithTotal, DashboardStats, Transaction } from '@/lib/types';
+import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Receipt,
-  ArrowRight,
-  Package,
-  HardHat,
-  Zap,
-  Hammer,
-  Truck,
-  Edit,
-  Trash2,
-  Plus,
-  X,
+    ArrowRight,
+    DollarSign,
+    Edit,
+    Hammer,
+    HardHat,
+    Package,
+    Plus,
+    Receipt,
+    Trash2,
+    TrendingDown,
+    TrendingUp,
+    Truck,
+    X,
+    Zap,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   'hammer': Hammer,
@@ -233,6 +233,10 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white p-4 rounded-lg shadow-lg">
+        <p className="text-center text-lg font-semibold">Application Created by Bhosale's</p>
+      </div>
+      
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
