@@ -46,14 +46,14 @@ CREATE POLICY "Allow all access to progress_photos" ON progress_photos FOR ALL U
 
 -- Seed Data
 INSERT INTO categories (name, budget_limit, icon) VALUES
-  ('C000, 'hammerement', 150'),
+  ('Cement', 150000, 'hammer'),
   ('Dust', 100000, 'truck'),
   ('Labor', 200000, 'hard-hat'),
   ('Electrical', 80000, 'zap'),
   ('Plumbing', 75000, 'droplets'),
-  ('Painting', 60000, 'paintbrush'),
-  ('Tiles', 120000, 'square'),
-  ('Steel', 180000, 'layers'),
-  ('Sand', 50000, 'mountain'),
-  ('Bricks', 80000, 'blocks')
+  ('Painting', 60000, 'package'),
+  ('Tiles', 120000, 'package'),
+  ('Steel', 180000, 'package'),
+  ('Sand', 50000, 'package'),
+  ('Bricks', 80000, 'package')
 ON CONFLICT (name) DO NOTHING;

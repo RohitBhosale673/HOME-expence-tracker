@@ -79,6 +79,8 @@ export default function DashboardPage() {
     payment_mode: 'Bank',
     contractor_name: '',
   });
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [transactionError, setTransactionError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -124,50 +126,88 @@ export default function DashboardPage() {
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCategoryError(null);
+    
+    // Validation
+    if (!categoryForm.name.trim()) {
+      setCategoryError('Category name is required');
+      return;
+    }
+    if (!categoryForm.budget_limit || Number(categoryForm.budget_limit) <= 0) {
+      setCategoryError('Budget limit must be greater than 0');
+      return;
+    }
+    
     try {
       if (editingCategory) {
-        await supabase.from('categories').update({
-          name: categoryForm.name,
+        const { error } = await supabase.from('categories').update({
+          name: categoryForm.name.trim(),
           budget_limit: Number(categoryForm.budget_limit),
           icon: categoryForm.icon,
         }).eq('id', editingCategory.id);
+        
+        if (error) throw error;
       } else {
-        await supabase.from('categories').insert({
-          name: categoryForm.name,
+        const { error } = await supabase.from('categories').insert({
+          name: categoryForm.name.trim(),
           budget_limit: Number(categoryForm.budget_limit),
           icon: categoryForm.icon,
         });
+        
+        if (error) throw error;
       }
       setShowCategoryModal(false);
       setEditingCategory(null);
       setCategoryForm({ name: '', budget_limit: '', icon: 'package' });
       fetchData();
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save category';
+      setCategoryError(errorMessage);
       console.error('Error saving category:', error);
     }
   };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTransactionError(null);
+    
+    // Validation
+    if (!transactionForm.category_id) {
+      setTransactionError('Please select a category');
+      return;
+    }
+    if (!transactionForm.amount || Number(transactionForm.amount) <= 0) {
+      setTransactionError('Amount must be greater than 0');
+      return;
+    }
+    if (!transactionForm.description.trim()) {
+      setTransactionError('Description is required');
+      return;
+    }
+    
     try {
       if (editingTransaction) {
-        await supabase.from('transactions').update({
+        const { error } = await supabase.from('transactions').update({
           category_id: transactionForm.category_id,
           amount: Number(transactionForm.amount),
           date: transactionForm.date,
-          description: transactionForm.description,
+          description: transactionForm.description.trim(),
           payment_mode: transactionForm.payment_mode,
           contractor_name: transactionForm.contractor_name || null,
         }).eq('id', editingTransaction.id);
+        
+        if (error) throw error;
       } else {
-        await supabase.from('transactions').insert({
+        const { error } = await supabase.from('transactions').insert({
           category_id: transactionForm.category_id,
           amount: Number(transactionForm.amount),
           date: transactionForm.date,
-          description: transactionForm.description,
+          description: transactionForm.description.trim(),
           payment_mode: transactionForm.payment_mode,
           contractor_name: transactionForm.contractor_name || null,
         });
+        
+        if (error) throw error;
       }
       setShowTransactionModal(false);
       setEditingTransaction(null);
@@ -181,6 +221,8 @@ export default function DashboardPage() {
       });
       fetchData();
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save transaction';
+      setTransactionError(errorMessage);
       console.error('Error saving transaction:', error);
     }
   };
@@ -406,8 +448,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Category Modal */}
-      <EditModal isOpen={showCategoryModal} onClose={() => setShowCategoryModal(false)} title={editingCategory ? 'Edit Category' : 'Add Category'}>
+      <EditModal isOpen={showCategoryModal} onClose={() => { setShowCategoryModal(false); setCategoryError(null); }} title={editingCategory ? 'Edit Category' : 'Add Category'}>
         <form onSubmit={handleAddCategory} className="space-y-4">
+          {categoryError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {categoryError}
+            </div>
+          )}
           <Input label="Category Name" value={categoryForm.name} onChange={e => setCategoryForm({...categoryForm, name: e.target.value})} required placeholder="e.g., Cement" />
           <Input label="Budget Limit (₹)" type="number" value={categoryForm.budget_limit} onChange={e => setCategoryForm({...categoryForm, budget_limit: e.target.value})} required placeholder="e.g., 150000" />
           <Select label="Icon" value={categoryForm.icon} onChange={e => setCategoryForm({...categoryForm, icon: e.target.value})} options={[
@@ -419,15 +466,20 @@ export default function DashboardPage() {
             { value: 'droplets', label: 'Plumbing' },
           ]} />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowCategoryModal(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => { setShowCategoryModal(false); setCategoryError(null); }}>Cancel</Button>
             <Button type="submit">{editingCategory ? 'Update' : 'Add'}</Button>
           </div>
         </form>
       </EditModal>
 
       {/* Transaction Modal */}
-      <EditModal isOpen={showTransactionModal} onClose={() => setShowTransactionModal(false)} title={editingTransaction ? 'Edit Transaction' : 'Add Transaction'}>
+      <EditModal isOpen={showTransactionModal} onClose={() => { setShowTransactionModal(false); setTransactionError(null); }} title={editingTransaction ? 'Edit Transaction' : 'Add Transaction'}>
         <form onSubmit={handleAddTransaction} className="space-y-4">
+          {transactionError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {transactionError}
+            </div>
+          )}
           <Select label="Category" value={transactionForm.category_id} onChange={e => setTransactionForm({...transactionForm, category_id: e.target.value})} options={[{ value: '', label: 'Select category' }, ...categoryOptions]} required />
           <Input label="Amount (₹)" type="number" value={transactionForm.amount} onChange={e => setTransactionForm({...transactionForm, amount: e.target.value})} required />
           <Input label="Date" type="date" value={transactionForm.date} onChange={e => setTransactionForm({...transactionForm, date: e.target.value})} required />
@@ -439,7 +491,7 @@ export default function DashboardPage() {
           ]} />
           <Input label="Contractor Name" value={transactionForm.contractor_name} onChange={e => setTransactionForm({...transactionForm, contractor_name: e.target.value})} placeholder="Optional" />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowTransactionModal(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => { setShowTransactionModal(false); setTransactionError(null); }}>Cancel</Button>
             <Button type="submit">{editingTransaction ? 'Update' : 'Add'}</Button>
           </div>
         </form>

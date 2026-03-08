@@ -1,23 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, Input, Textarea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import type { Transaction, Category } from '@/lib/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
+import type { Category, Transaction } from '@/lib/types';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import {
-  Users,
-  DollarSign,
   Calendar,
-  FileText,
   CreditCard,
+  DollarSign,
   Edit,
+  FileText,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface EditModalProps {
   isOpen: boolean;
@@ -48,6 +48,7 @@ export default function ContractorsPage() {
   const [selectedContractor, setSelectedContractor] = useState<string>('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     category_id: '',
     amount: '',
@@ -111,22 +112,42 @@ export default function ContractorsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    
+    // Validation
+    if (!formData.category_id) {
+      setError('Please select a category');
+      return;
+    }
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      setError('Amount must be greater than 0');
+      return;
+    }
+    if (!formData.description.trim()) {
+      setError('Description is required');
+      return;
+    }
+    
     try {
       if (editingTransaction) {
-        await supabase.from('transactions').update({
+        const { error: updateError } = await supabase.from('transactions').update({
           category_id: formData.category_id,
           amount: Number(formData.amount),
           date: formData.date,
-          description: formData.description,
+          description: formData.description.trim(),
           payment_mode: formData.payment_mode,
           contractor_name: formData.contractor_name || null,
         }).eq('id', editingTransaction.id);
+        
+        if (updateError) throw updateError;
       }
       setShowEditModal(false);
       setEditingTransaction(null);
       fetchData();
-    } catch (error) {
-      console.error('Error saving transaction:', error);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save transaction';
+      setError(errorMessage);
+      console.error('Error saving transaction:', err);
     }
   };
 
@@ -263,8 +284,13 @@ export default function ContractorsPage() {
         </CardContent>
       </Card>
 
-      <EditModal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Transaction">
+      <EditModal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setError(null); }} title="Edit Transaction">
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          )}
           <Select label="Category" value={formData.category_id} onChange={e => setFormData({...formData, category_id: e.target.value})} options={[{ value: '', label: 'Select category' }, ...categoryOptions]} required />
           <Input label="Amount (₹)" type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} required />
           <Input label="Date" type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required />
@@ -272,7 +298,7 @@ export default function ContractorsPage() {
           <Select label="Payment Mode" value={formData.payment_mode} onChange={e => setFormData({...formData, payment_mode: e.target.value})} options={[{ value: 'Cash', label: 'Cash' }, { value: 'UPI', label: 'UPI' }, { value: 'Bank', label: 'Bank Transfer' }]} />
           <Input label="Contractor Name" value={formData.contractor_name} onChange={e => setFormData({...formData, contractor_name: e.target.value})} placeholder="Optional" />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => { setShowEditModal(false); setError(null); }}>Cancel</Button>
             <Button type="submit">Update</Button>
           </div>
         </form>
