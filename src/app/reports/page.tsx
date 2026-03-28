@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { formatCurrency, cn } from '@/lib/utils';
 import type { CategoryWithTotal, Transaction, Category } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { getCategories, getTransactions, addCategory, updateCategory, deleteCategory } from '@/lib/local-db';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   FileBarChart,
   TrendingUp,
@@ -26,6 +28,7 @@ import {
   Trash2,
   Plus,
   X,
+  Download,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -68,13 +71,11 @@ export default function ReportsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [catsRes, txnsRes] = await Promise.all([
-        supabase.from('categories').select('*').order('name'),
-        supabase.from('transactions').select('*').order('date', { ascending: false }),
-      ]);
-
-      const cats = catsRes.data || [];
-      const txns = txnsRes.data || [];
+      const rawCats = await getCategories();
+      const rawTxns = await getTransactions();
+      
+      const cats = [...rawCats].sort((a, b) => a.name.localeCompare(b.name));
+      const txns = [...rawTxns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       const catsWithTotal = cats.map((cat: Category) => {
         const catTxns = txns.filter((t: Transaction) => t.category_id === cat.id);
@@ -105,13 +106,13 @@ export default function ReportsPage() {
     e.preventDefault();
     try {
       if (editingCategory) {
-        await supabase.from('categories').update({
+        await updateCategory(editingCategory.id, {
           name: categoryForm.name,
           budget_limit: Number(categoryForm.budget_limit),
           icon: categoryForm.icon,
-        }).eq('id', editingCategory.id);
+        });
       } else {
-        await supabase.from('categories').insert({
+        await addCategory({
           name: categoryForm.name,
           budget_limit: Number(categoryForm.budget_limit),
           icon: categoryForm.icon,
@@ -128,7 +129,7 @@ export default function ReportsPage() {
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Delete this category and all its transactions?')) {
-      await supabase.from('categories').delete().eq('id', id);
+      await deleteCategory(id);
       fetchData();
     }
   };
@@ -148,6 +149,35 @@ export default function ReportsPage() {
     { value: 'blocks', label: 'Bricks' },
   ];
 
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text('BuildTrack Pro - Expense Report', 14, 22);
+    
+    doc.setFontSize(12);
+    doc.text(`Total Budget: ${formatCurrency(totalBudget)}`, 14, 32);
+    doc.text(`Total Spent: ${formatCurrency(totalSpent)}`, 14, 40);
+    doc.text(`Remaining: ${formatCurrency(totalBudget - totalSpent)}`, 14, 48);
+
+    const tableData = categories.map(cat => [
+      cat.name,
+      formatCurrency(Number(cat.budget_limit)),
+      formatCurrency(Number(cat.total_spent)),
+      formatCurrency(Number(cat.budget_limit) - Number(cat.total_spent)),
+      cat.transaction_count.toString()
+    ]);
+
+    autoTable(doc, {
+      startY: 55,
+      head: [['Category', 'Budget', 'Spent', 'Remaining', 'Txns']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229] }
+    });
+
+    doc.save('expense-report.pdf');
+  };
+
   if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
   return (
@@ -157,9 +187,14 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Reports</h1>
           <p className="text-slate-500">Detailed expense breakdown by category</p>
         </div>
-        <Button onClick={() => { setEditingCategory(null); setCategoryForm({ name: '', budget_limit: '', icon: 'package' }); setShowCategoryModal(true); }}>
-          <Plus className="w-4 h-4 mr-2" /> Add Category
-        </Button>
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button variant="outline" onClick={handleDownloadPDF} className="bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50">
+            <Download className="w-4 h-4 mr-2" /> Download PDF
+          </Button>
+          <Button onClick={() => { setEditingCategory(null); setCategoryForm({ name: '', budget_limit: '', icon: 'package' }); setShowCategoryModal(true); }}>
+            <Plus className="w-4 h-4 mr-2" /> Add Category
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

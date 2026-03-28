@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea, Select } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { getCategories, addTransaction } from '@/lib/local-db';
 import type { Category } from '@/lib/types';
 import {
   Receipt,
@@ -47,7 +47,8 @@ export default function NewExpensePage() {
 
   useEffect(() => {
     const fetchCategories = async () => {
-      const { data } = await supabase.from('categories').select('*').order('name');
+      const rawData = await getCategories();
+      const data = [...rawData].sort((a, b) => a.name.localeCompare(b.name));
       if (data && data.length > 0) {
         setCategories(data);
         setFormData(prev => ({ ...prev, category_id: data[0].id }));
@@ -73,42 +74,24 @@ export default function NewExpensePage() {
     try {
       let receiptUrl: string | null = null;
 
-      // Upload receipt if exists
       if (formData.receipt) {
-        const fileName = `${Date.now()}-${formData.receipt.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('receipts')
-          .upload(fileName, formData.receipt);
-
-        if (uploadError) {
-          console.error('Upload error:', uploadError);
-          // Continue without receipt if upload fails
-        } else if (uploadData) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('receipts')
-            .getPublicUrl(fileName);
-          receiptUrl = publicUrl;
-        }
+        const reader = new FileReader();
+        receiptUrl = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(formData.receipt!);
+        });
       }
 
-      // Save transaction to database
-      const { data, error: insertError } = await supabase
-        .from('transactions')
-        .insert({
-          category_id: formData.category_id,
-          amount: Number(formData.amount),
-          date: formData.date,
-          description: formData.description,
-          payment_mode: formData.payment_mode,
-          contractor_name: formData.contractor_name || null,
-          receipt_url: receiptUrl,
-        })
-        .select();
-
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        throw insertError;
-      }
+      const data = await addTransaction({
+        category_id: formData.category_id,
+        amount: Number(formData.amount),
+        date: formData.date,
+        description: formData.description,
+        payment_mode: formData.payment_mode as any,
+        contractor_name: formData.contractor_name || null,
+        receipt_url: receiptUrl,
+      });
 
       console.log('Transaction saved:', data);
       setIsSubmitting(false);

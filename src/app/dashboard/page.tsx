@@ -3,7 +3,18 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Select, Textarea } from '@/components/ui/input';
-import { supabase } from '@/lib/supabase';
+import {
+  addCategory,
+  addTransaction,
+  deleteCategory,
+  deleteTransaction,
+  getCategories,
+  getTransactions,
+  initDummyData,
+  clearAllData,
+  updateCategory,
+  updateTransaction,
+} from '@/lib/local-db';
 import type { Category, CategoryWithTotal, DashboardStats, Transaction } from '@/lib/types';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import {
@@ -85,13 +96,11 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [catsRes, txnsRes] = await Promise.all([
-        supabase.from('categories').select('*').order('name'),
-        supabase.from('transactions').select('*').order('date', { ascending: false }),
-      ]);
-
-      const cats = catsRes.data || [];
-      const txns = txnsRes.data || [];
+      const rawCats = await getCategories();
+      const rawTxns = await getTransactions();
+      
+      const cats = [...rawCats].sort((a, b) => a.name.localeCompare(b.name));
+      const txns = [...rawTxns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       const catsWithTotal = cats.map((cat: Category) => {
         const catTxns = txns.filter((t: Transaction) => t.category_id === cat.id);
@@ -140,30 +149,37 @@ export default function DashboardPage() {
     
     try {
       if (editingCategory) {
-        const { error } = await supabase.from('categories').update({
-          name: categoryForm.name.trim(),
-          budget_limit: Number(categoryForm.budget_limit),
-          icon: categoryForm.icon,
-        }).eq('id', editingCategory.id);
-        
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('categories').insert({
+        await updateCategory(editingCategory.id, {
           name: categoryForm.name.trim(),
           budget_limit: Number(categoryForm.budget_limit),
           icon: categoryForm.icon,
         });
-        
-        if (error) throw error;
+      } else {
+        await addCategory({
+          name: categoryForm.name.trim(),
+          budget_limit: Number(categoryForm.budget_limit),
+          icon: categoryForm.icon,
+        });
       }
       setShowCategoryModal(false);
       setEditingCategory(null);
       setCategoryForm({ name: '', budget_limit: '', icon: 'package' });
       fetchData();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save category';
+    } catch (error: any) {
+      console.error('CRITICAL ERROR DBG:', {
+        type: typeof error,
+        isError: error instanceof Error,
+        keys: Object.keys(error || {}),
+        ownNames: Object.getOwnPropertyNames(error || {}),
+        name: error?.name,
+        message: error?.message,
+        toString: error?.toString ? error.toString() : 'NO_TOSTRING'
+      });
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error?.message || 'Failed to save category');
       setCategoryError(errorMessage);
-      console.error('Error saving category:', error);
+      console.error('Error saving category:', error?.message ? error : JSON.stringify(error));
     }
   };
 
@@ -187,27 +203,24 @@ export default function DashboardPage() {
     
     try {
       if (editingTransaction) {
-        const { error } = await supabase.from('transactions').update({
+        await updateTransaction(editingTransaction.id, {
           category_id: transactionForm.category_id,
           amount: Number(transactionForm.amount),
           date: transactionForm.date,
           description: transactionForm.description.trim(),
-          payment_mode: transactionForm.payment_mode,
-          contractor_name: transactionForm.contractor_name || null,
-        }).eq('id', editingTransaction.id);
-        
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('transactions').insert({
-          category_id: transactionForm.category_id,
-          amount: Number(transactionForm.amount),
-          date: transactionForm.date,
-          description: transactionForm.description.trim(),
-          payment_mode: transactionForm.payment_mode,
+          payment_mode: transactionForm.payment_mode as any,
           contractor_name: transactionForm.contractor_name || null,
         });
-        
-        if (error) throw error;
+      } else {
+        await addTransaction({
+          category_id: transactionForm.category_id,
+          amount: Number(transactionForm.amount),
+          date: transactionForm.date,
+          description: transactionForm.description.trim(),
+          payment_mode: transactionForm.payment_mode as any,
+          contractor_name: transactionForm.contractor_name || null,
+          receipt_url: null,
+        });
       }
       setShowTransactionModal(false);
       setEditingTransaction(null);
@@ -220,23 +233,25 @@ export default function DashboardPage() {
         contractor_name: '',
       });
       fetchData();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save transaction';
+    } catch (error: any) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error?.message || 'Failed to save transaction');
       setTransactionError(errorMessage);
-      console.error('Error saving transaction:', error);
+      console.error('Error saving transaction:', error?.message ? error : JSON.stringify(error));
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
     if (confirm('Are you sure you want to delete this transaction?')) {
-      await supabase.from('transactions').delete().eq('id', id);
+      await deleteTransaction(id);
       fetchData();
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Are you sure you want to delete this category? All transactions in this category will also be deleted.')) {
-      await supabase.from('categories').delete().eq('id', id);
+      await deleteCategory(id);
       fetchData();
     }
   };
@@ -284,7 +299,13 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
           <p className="text-slate-500">Track your construction expenses</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button variant="secondary" onClick={initDummyData} className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-none">
+            <Zap className="w-4 h-4 mr-2" /> Load Dummy Data
+          </Button>
+          <Button variant="secondary" onClick={clearAllData} className="bg-red-100 text-red-800 hover:bg-red-200 border-none">
+            <Trash2 className="w-4 h-4 mr-2" /> Clear Data
+          </Button>
           <Button variant="outline" onClick={() => { setEditingCategory(null); setCategoryForm({ name: '', budget_limit: '', icon: 'package' }); setShowCategoryModal(true); }}>
             <Plus className="w-4 h-4 mr-2" /> Add Category
           </Button>

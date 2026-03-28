@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Select, Textarea } from '@/components/ui/input';
-import { supabase } from '@/lib/supabase';
+import { getTransactions, getCategories, deleteTransaction, updateTransaction } from '@/lib/local-db';
 import type { Category, Transaction } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import {
@@ -61,12 +61,11 @@ export default function ContractorsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [txnsRes, catsRes] = await Promise.all([
-        supabase.from('transactions').select('*').order('date', { ascending: false }),
-        supabase.from('categories').select('*').order('name'),
-      ]);
-      setTransactions(txnsRes.data || []);
-      setCategories(catsRes.data || []);
+      const rawTxns = await getTransactions();
+      const rawCats = await getCategories();
+      
+      setTransactions([...rawTxns].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      setCategories([...rawCats].sort((a, b) => a.name.localeCompare(b.name)));
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -105,7 +104,7 @@ export default function ContractorsPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this transaction?')) {
-      await supabase.from('transactions').delete().eq('id', id);
+      await deleteTransaction(id);
       fetchData();
     }
   };
@@ -130,16 +129,14 @@ export default function ContractorsPage() {
     
     try {
       if (editingTransaction) {
-        const { error: updateError } = await supabase.from('transactions').update({
+        await updateTransaction(editingTransaction.id, {
           category_id: formData.category_id,
           amount: Number(formData.amount),
           date: formData.date,
           description: formData.description.trim(),
-          payment_mode: formData.payment_mode,
+          payment_mode: formData.payment_mode as any,
           contractor_name: formData.contractor_name || null,
-        }).eq('id', editingTransaction.id);
-        
-        if (updateError) throw updateError;
+        });
       }
       setShowEditModal(false);
       setEditingTransaction(null);

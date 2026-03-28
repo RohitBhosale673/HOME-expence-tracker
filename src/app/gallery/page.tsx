@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/input';
 import { formatDate } from '@/lib/utils';
 import type { ProgressPhoto } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { getProgressPhotos, addProgressPhoto, deleteProgressPhoto, updateProgressPhoto } from '@/lib/local-db';
 import {
   Camera,
   Upload,
@@ -52,8 +52,8 @@ export default function GalleryPage() {
   const fetchPhotos = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from('progress_photos').select('*').order('uploaded_at', { ascending: false });
-      setPhotos(data || []);
+      const data = await getProgressPhotos();
+      setPhotos([...data].sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()));
     } catch (error) {
       console.error('Error fetching photos:', error);
     }
@@ -71,36 +71,33 @@ export default function GalleryPage() {
     if (file) {
       setIsUploading(true);
       try {
-        const fileName = `${Date.now()}-${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('progress-photos')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('progress-photos')
-          .getPublicUrl(fileName);
-
-        await supabase.from('progress_photos').insert({
-          image_url: publicUrl,
-          description: '',
-          uploaded_at: new Date().toISOString(),
-        });
-
-        fetchPhotos();
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Url = reader.result as string;
+          await addProgressPhoto({
+            image_url: base64Url,
+            description: '',
+          });
+          fetchPhotos();
+          setIsUploading(false);
+        };
+        reader.onerror = () => {
+          alert('Upload failed. Please try again.');
+          setIsUploading(false);
+        };
+        reader.readAsDataURL(file);
       } catch (error) {
         console.error('Error uploading:', error);
         alert('Upload failed. Please try again.');
+        setIsUploading(false);
       }
-      setIsUploading(false);
     }
     e.target.value = '';
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this photo?')) {
-      await supabase.from('progress_photos').delete().eq('id', id);
+      await deleteProgressPhoto(id);
       fetchPhotos();
     }
   };
@@ -113,7 +110,7 @@ export default function GalleryPage() {
 
   const handleUpdateDescription = async () => {
     if (editingPhoto) {
-      await supabase.from('progress_photos').update({ description }).eq('id', editingPhoto.id);
+      await updateProgressPhoto(editingPhoto.id, { description });
       setShowEditModal(false);
       setEditingPhoto(null);
       fetchPhotos();

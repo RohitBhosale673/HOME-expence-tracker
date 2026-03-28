@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input, Textarea, Select } from '@/components/ui/input';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import type { CategoryWithTotal, Transaction, Category } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { getCategories, getTransactions, deleteTransaction, updateTransaction, addTransaction } from '@/lib/local-db';
 import {
   ArrowLeft,
   Download,
@@ -88,15 +88,15 @@ export default function CategoryDetailPage() {
     if (!categoryId) return;
     setLoading(true);
     try {
-      const [catRes, txnsRes, allCatsRes] = await Promise.all([
-        supabase.from('categories').select('*').eq('id', categoryId).single(),
-        supabase.from('transactions').select('*').eq('category_id', categoryId).order('date', { ascending: false }),
-        supabase.from('categories').select('*').order('name'),
-      ]);
-
-      const cat = catRes.data as Category;
-      const txns = txnsRes.data || [];
-      const allCats = allCatsRes.data || [];
+      const rawCats = await getCategories();
+      const rawTxns = await getTransactions();
+      
+      const cat = rawCats.find(c => c.id === categoryId);
+      const txns = rawTxns
+        .filter(t => t.category_id === categoryId)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+      const allCats = [...rawCats].sort((a, b) => a.name.localeCompare(b.name));
 
       if (cat) {
         const totalSpent = txns.reduce((sum: number, t: Transaction) => sum + (Number(t.amount) || 0), 0);
@@ -131,7 +131,7 @@ export default function CategoryDetailPage() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this transaction?')) {
-      await supabase.from('transactions').delete().eq('id', id);
+      await deleteTransaction(id);
       fetchData();
     }
   };
@@ -140,22 +140,23 @@ export default function CategoryDetailPage() {
     e.preventDefault();
     try {
       if (editingTransaction) {
-        await supabase.from('transactions').update({
+        await updateTransaction(editingTransaction.id, {
           category_id: formData.category_id,
           amount: Number(formData.amount),
           date: formData.date,
           description: formData.description,
-          payment_mode: formData.payment_mode,
+          payment_mode: formData.payment_mode as any,
           contractor_name: formData.contractor_name || null,
-        }).eq('id', editingTransaction.id);
+        });
       } else {
-        await supabase.from('transactions').insert({
+        await addTransaction({
           category_id: categoryId,
           amount: Number(formData.amount),
           date: formData.date,
           description: formData.description,
-          payment_mode: formData.payment_mode,
+          payment_mode: formData.payment_mode as any,
           contractor_name: formData.contractor_name || null,
+          receipt_url: null,
         });
       }
       setShowEditModal(false);
